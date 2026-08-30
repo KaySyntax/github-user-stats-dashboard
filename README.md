@@ -43,5 +43,5 @@ npm run dev
 ## 👨‍💻 Author
 
 **Nana Kofi Opoku-Temeng**
-*Computer Engineering, KNUST*
+
 Learning in public and building scalable systems for the web.
