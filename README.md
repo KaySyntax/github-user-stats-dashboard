@@ -1,32 +1,47 @@
-# React + TypeScript + Vite
+# 📊 GitHub Stats Dashboard
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+This is a lightweight, client-side React application that transforms standard GitHub profiles into beautiful, interactive data visualizations. By hooking directly into the public GitHub API and handling personal access tokens to bypass rate limits, this dashboard instantly generates charts for language usage, repository stars, and commit history. Built entirely on the frontend to showcase clean UI design and complex state management.
 
-Currently, two official plugins are available:
+## 🚀 Tech Stack
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+*   **Framework:** React (scaffolded with Vite for lightning-fast HMR)
+*   **Language:** TypeScript (strict type-checking for API payloads)
+*   **Data Visualization:** Recharts (composable SVG charting library)
+*   **Data Fetching:** Native JavaScript Fetch API 
 
-## React Compiler
+## ✨ Key Features
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+*   **Interactive Visualizations:** Transforms raw JSON API data into dynamic bar, pie, and line charts.
+*   **Rate-Limit Bypass:** Configured to accept GitHub Personal Access Tokens (PAT) via environment variables, bumping the API limit from 60 to 5,000 requests per hour.
+*   **Dynamic Searching:** Enter any public GitHub handle to instantly fetch and render their developer footprint.
 
-## Expanding the Oxlint configuration
+## 🛠️ Local Setup & Installation
 
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
+**1. Clone the repository**
+\`\`\`bash
+git clone https://github.com/KaySyntax/github-stats-dashboard.git
+cd github-stats-dashboard
+\`\`\`
 
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
-```
+**2. Install dependencies**
+\`\`\`bash
+npm install
+\`\`\`
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+**3. Configure your environment variables**
+Create a new file named `.env.local` in the root directory and add your GitHub Personal Access Token:
+\`\`\`env
+VITE_GITHUB_TOKEN=ghp_your_personal_access_token_here
+\`\`\`
+*(Note: This file is included in `.gitignore` and will never be pushed to a public repository).*
+
+**4. Start the development server**
+\`\`\`bash
+npm run dev
+\`\`\`
+
+## 👨‍💻 Author
+
+**Nana Kofi Opoku-Temeng**
+*Computer Engineering, KNUST*
+Learning in public and building scalable systems for the web.
