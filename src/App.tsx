@@ -1,13 +1,11 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { CompareSearchBar } from './components/CompareSearchBar'
 import { ComparisonDashboard } from './components/ComparisonDashboard'
 import { Dashboard } from './components/Dashboard'
 import { Footer } from './components/Footer'
 import { HomePage } from './components/HomePage'
 import { SearchBar } from './components/SearchBar'
-import { TokenSettings } from './components/TokenSettings'
 import { useGitHubComparison, useGitHubStats } from './hooks/useGitHubStats'
-import { isHostedToken } from './utils/token'
 import './App.css'
 
 type Mode = 'single' | 'compare'
@@ -27,6 +25,13 @@ function App() {
     reset: resetCompare,
   } = useGitHubComparison()
 
+  // Header auto-hide state
+  const [headerVisible, setHeaderVisible] = useState(true)
+  const [headerFocused, setHeaderFocused] = useState(false)
+  const [scrolled, setScrolled] = useState(false)
+  const headerRef = useRef<HTMLElement>(null)
+  const hideTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined)
+
   const activeError = mode === 'single' ? error : compareError
   const activeLoading = mode === 'single' ? loading : comparing
   const activeUser = mode === 'single' ? username : `${userA} vs ${userB}`
@@ -36,10 +41,104 @@ function App() {
 
   const showHome = !activeLoading && !hasResults
 
+  // The header should auto-hide only when viewing results AND search isn't focused
+  const shouldAutoHide = hasResults && !showHome
+
+  // Show header when on home page or loading
+  useEffect(() => {
+    if (!shouldAutoHide) {
+      setHeaderVisible(true)
+    }
+  }, [shouldAutoHide])
+
+  // Auto-hide header after results load (with delay), but NOT if search is focused
+  useEffect(() => {
+    if (shouldAutoHide && !headerFocused) {
+      hideTimeoutRef.current = setTimeout(() => {
+        setHeaderVisible(false)
+      }, 1500)
+      return () => clearTimeout(hideTimeoutRef.current)
+    }
+  }, [shouldAutoHide, headerFocused])
+
+  // Track scroll for header shadow
+  useEffect(() => {
+    function handleScroll() {
+      setScrolled(window.scrollY > 10)
+    }
+    window.addEventListener('scroll', handleScroll, { passive: true })
+    return () => window.removeEventListener('scroll', handleScroll)
+  }, [])
+
+  // Keyboard shortcut: Ctrl+K or / to reveal header and focus search
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      const target = e.target as HTMLElement
+      const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable
+
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault()
+        setHeaderVisible(true)
+        setTimeout(() => {
+          const input = document.querySelector<HTMLInputElement>('.app-header .search-input-wrap input')
+          input?.focus()
+          input?.select()
+        }, 50)
+      } else if (e.key === '/' && !isInput) {
+        e.preventDefault()
+        setHeaderVisible(true)
+        setTimeout(() => {
+          const input = document.querySelector<HTMLInputElement>('.app-header .search-input-wrap input')
+          input?.focus()
+          input?.select()
+        }, 50)
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [])
+
+  // Track focus inside header — don't auto-hide while user is typing in search
+  const handleHeaderFocusIn = useCallback(() => {
+    setHeaderFocused(true)
+    clearTimeout(hideTimeoutRef.current)
+  }, [])
+
+  const handleHeaderFocusOut = useCallback((e: React.FocusEvent) => {
+    // Only unfocus if the new focus target is outside the header
+    if (headerRef.current && !headerRef.current.contains(e.relatedTarget as Node)) {
+      setHeaderFocused(false)
+    }
+  }, [])
+
+  // Mouse enter trigger zone (top of viewport) to reveal header
+  const handleTriggerEnter = useCallback(() => {
+    if (shouldAutoHide) {
+      clearTimeout(hideTimeoutRef.current)
+      setHeaderVisible(true)
+    }
+  }, [shouldAutoHide])
+
+  // Mouse leave header area to hide it again (only if search not focused)
+  const handleHeaderLeave = useCallback(() => {
+    if (shouldAutoHide && !headerFocused) {
+      hideTimeoutRef.current = setTimeout(() => {
+        setHeaderVisible(false)
+      }, 400)
+    }
+  }, [shouldAutoHide, headerFocused])
+
+  // Cancel hide when mouse re-enters header
+  const handleHeaderEnter = useCallback(() => {
+    clearTimeout(hideTimeoutRef.current)
+  }, [])
+
   function goHome() {
     resetSingle()
     resetCompare()
     setSearchKey((k) => k + 1)
+    setHeaderVisible(true)
+    setHeaderFocused(false)
   }
 
   function handleModeChange(next: Mode) {
@@ -47,11 +146,44 @@ function App() {
     goHome()
   }
 
+  function handleSearch(username: string) {
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+    search(username)
+  }
+
+  function handleCompare(userA: string, userB: string) {
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+    compare(userA, userB)
+  }
+
+  const headerClasses = [
+    'app-header',
+    shouldAutoHide ? 'header-floating' : '',
+    shouldAutoHide && !headerVisible ? 'header-collapsed' : '',
+    scrolled ? 'header-scrolled' : '',
+  ].filter(Boolean).join(' ')
+
   return (
     <div className="app">
       <div className="bg-glow" aria-hidden="true" />
 
-      <header className="app-header">
+      {/* Trigger zone: large invisible area at top that reveals header on hover */}
+      {shouldAutoHide && !headerVisible && (
+        <div
+          className="header-trigger"
+          onMouseEnter={handleTriggerEnter}
+          aria-hidden="true"
+        />
+      )}
+
+      <header
+        ref={headerRef}
+        className={headerClasses}
+        onMouseEnter={handleHeaderEnter}
+        onMouseLeave={handleHeaderLeave}
+        onFocusCapture={handleHeaderFocusIn}
+        onBlurCapture={handleHeaderFocusOut}
+      >
         <div className="header-top">
           <button type="button" className="brand brand-btn" onClick={goHome} title="Back to home">
             <svg className="brand-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -62,7 +194,6 @@ function App() {
               <p>Instant coding habit analytics for any public profile</p>
             </div>
           </button>
-          {isHostedToken() ? null : <TokenSettings />}
         </div>
 
         <div className="header-nav">
@@ -95,9 +226,9 @@ function App() {
         </div>
 
         {mode === 'single' ? (
-          <SearchBar key={searchKey} onSearch={search} loading={loading} />
+          <SearchBar key={searchKey} onSearch={handleSearch} loading={loading} />
         ) : (
-          <CompareSearchBar key={searchKey} onCompare={compare} loading={comparing} />
+          <CompareSearchBar key={searchKey} onCompare={handleCompare} loading={comparing} />
         )}
       </header>
 
@@ -110,14 +241,18 @@ function App() {
 
         {activeLoading && (
           <div className="loading-state">
-            <div className="loading-pulse" />
+            <div className="loading-skeleton">
+              <div className="skeleton-bar" />
+              <div className="skeleton-bar short" />
+              <div className="skeleton-bar" />
+            </div>
             <p>
               Fetching data for <strong>{activeUser}</strong>…
             </p>
           </div>
         )}
 
-        {showHome && <HomePage mode={mode} onSearch={search} onCompare={compare} />}
+        {showHome && <HomePage mode={mode} onSearch={handleSearch} onCompare={handleCompare} />}
 
         {mode === 'single' && !loading && stats && <Dashboard stats={stats} />}
         {mode === 'compare' && !comparing && statsA && statsB && (

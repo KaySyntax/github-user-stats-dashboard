@@ -32,29 +32,37 @@ export function ContributionHeatmap({ data }: ContributionHeatmapProps) {
 
   return (
     <div className="heatmap">
-      <div className="heatmap-meta">
-        <span>{total.toLocaleString()} commits in the last 16 weeks</span>
-      </div>
-      <div className="heatmap-scroll">
-        <div className="heatmap-labels">
-          {DAY_LABELS.map((label, i) => (
-            <span key={i} className="heatmap-day-label">
-              {label}
-            </span>
-          ))}
-        </div>
-        <div className="heatmap-grid" style={{ gridTemplateColumns: `repeat(${weeks}, 1fr)` }}>
-          {grid.map((week, wi) =>
-            week.map((cell, di) => (
-              <div
-                key={`${wi}-${di}`}
-                className={`heatmap-cell ${cell ? intensityClass(cell.count) : 'level-0'}`}
-                title={cell ? `${cell.count} commits on ${cell.date}` : undefined}
-              />
-            )),
-          )}
+      <div className="heatmap-header">
+        <div className="heatmap-meta">
+          <span>{total.toLocaleString()} commits in the last 16 weeks</span>
         </div>
       </div>
+
+      <div className="heatmap-container">
+        <div className="heatmap-scroll">
+          <div className="heatmap-labels">
+            {DAY_LABELS.map((label, i) => (
+              <span key={i} className="heatmap-day-label">
+                {label}
+              </span>
+            ))}
+          </div>
+          <div className="heatmap-grid-wrapper">
+            <div className="heatmap-grid" style={{ gridTemplateColumns: `repeat(${weeks}, 1fr)` }}>
+              {grid.map((week, wi) =>
+                week.map((cell, di) => (
+                  <div
+                    key={`${wi}-${di}`}
+                    className={`heatmap-cell ${cell ? intensityClass(cell.count) : 'level-0'}`}
+                    title={cell ? `${cell.count} commits on ${cell.date}` : undefined}
+                  />
+                )),
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+      
       <div className="heatmap-legend">
         <span>Less</span>
         {['level-0', 'level-1', 'level-2', 'level-3', 'level-4'].map((lvl) => (

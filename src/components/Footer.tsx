@@ -1,5 +1,3 @@
-import { useToken } from '../context/TokenContext'
-
 const SOCIAL_LINKS = [
   {
     label: 'GitHub',
@@ -49,8 +47,6 @@ const SOCIAL_LINKS = [
 ]
 
 export function Footer() {
-  const { hasToken } = useToken()
-
   return (
     <footer className="app-footer">
       <div className="footer-social">
@@ -80,8 +76,7 @@ export function Footer() {
         <a href="https://docs.github.com/en/rest" target="_blank" rel="noreferrer">
           GitHub REST API
         </a>
-        {' · '}
-        {hasToken ? 'Powered by GitHub API' : '60 req/hr without PAT'}
+        {' · Powered by GitHub API'}
       </p>
     </footer>
   )

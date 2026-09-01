@@ -1,7 +1,6 @@
 import { useCallback, useState } from 'react'
 import { fetchUserStats } from '../api/github'
 import type { DashboardStats } from '../types/github'
-import { buildDashboardStats } from '../utils/chartData'
 
 interface UseGitHubStatsResult {
   stats: DashboardStats | null
@@ -27,9 +26,9 @@ export function useGitHubStats(): UseGitHubStatsResult {
     setUsername(trimmed)
 
     try {
-      const { user, repos, events } = await fetchUserStats(trimmed)
-      setStats(buildDashboardStats(user, repos, events))
-      setUsername(user.login)
+      const dashboardStats = await fetchUserStats(trimmed)
+      setStats(dashboardStats)
+      setUsername(dashboardStats.user.login)
     } catch (err) {
       setStats(null)
       setError(err instanceof Error ? err.message : 'Something went wrong')
@@ -82,8 +81,8 @@ export function useGitHubComparison(): UseGitHubComparisonResult {
         fetchUserStats(trimmedA),
         fetchUserStats(trimmedB),
       ])
-      setStatsA(buildDashboardStats(dataA.user, dataA.repos, dataA.events))
-      setStatsB(buildDashboardStats(dataB.user, dataB.repos, dataB.events))
+      setStatsA(dataA)
+      setStatsB(dataB)
       setUserA(dataA.user.login)
       setUserB(dataB.user.login)
     } catch (err) {

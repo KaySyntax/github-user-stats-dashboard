@@ -1,4 +1,6 @@
+import { useRef, useState } from 'react'
 import type { DashboardStats } from '../types/github'
+import { AiInsightsCard } from './AiInsightsCard'
 import { ProfileHeader } from './ProfileHeader'
 import { StatCard } from './StatCard'
 import { ActivityAreaChart } from './charts/ActivityAreaChart'
@@ -14,14 +16,14 @@ interface DashboardProps {
 }
 
 export function Dashboard({ stats }: DashboardProps) {
+  const dashboardRef = useRef<HTMLDivElement>(null)
+  const [aiTitle, setAiTitle] = useState<string | undefined>(undefined)
+
   return (
-    <div className="dashboard">
-      <ProfileHeader
-        user={stats.user}
-        totalStars={stats.totalStars}
-        totalForks={stats.totalForks}
-        totalCommits={stats.totalCommits}
-      />
+    <div className="dashboard" ref={dashboardRef}>
+      <ProfileHeader stats={stats} aiTitle={aiTitle} />
+      
+      <AiInsightsCard stats={stats} onTitleReady={setAiTitle} />
 
       <div className="charts-grid">
         <StatCard title="Contribution Heatmap" subtitle="Commit activity over the last 16 weeks" className="wide">
@@ -55,3 +57,4 @@ export function Dashboard({ stats }: DashboardProps) {
     </div>
   )
 }
+

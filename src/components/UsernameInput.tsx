@@ -20,8 +20,12 @@ export function UsernameInput({
 }: UsernameInputProps) {
   const [open, setOpen] = useState(false)
   const [highlight, setHighlight] = useState(-1)
+  const [focused, setFocused] = useState(false)
   const wrapRef = useRef<HTMLDivElement>(null)
   const { suggestions, loading: suggesting } = useUserSuggestions(value)
+
+  // Detect platform for shortcut badge
+  const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.userAgent)
 
   useEffect(() => {
     function onClickOutside(e: MouseEvent) {
@@ -79,12 +83,18 @@ export function UsernameInput({
           setOpen(true)
           setHighlight(-1)
         }}
-        onFocus={() => setOpen(true)}
+        onFocus={() => { setOpen(true); setFocused(true) }}
+        onBlur={() => setFocused(false)}
         onKeyDown={handleKeyDown}
         disabled={disabled}
         spellCheck={false}
         autoComplete="off"
       />
+
+      {/* Keyboard shortcut hint — only show when input is empty and not focused */}
+      {!value && !focused && !disabled && (
+        <kbd className="search-kbd">{isMac ? '⌘' : 'Ctrl+'}K</kbd>
+      )}
 
       {showDropdown && (
         <ul id={`${id}-listbox`} className="suggestions-dropdown" role="listbox">
