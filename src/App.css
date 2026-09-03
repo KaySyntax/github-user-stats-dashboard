@@ -1587,6 +1587,17 @@
   color: var(--text);
 }
 
+.share-tip {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-align: center;
+  line-height: 1.4;
+}
+.share-tip strong {
+  color: var(--text);
+}
+
 /* Badge items — enhanced with lighter bg and drop shadow */
 .badge {
   background: rgba(48, 54, 61, 0.6) !important;

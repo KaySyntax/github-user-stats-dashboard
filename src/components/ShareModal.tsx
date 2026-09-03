@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import * as htmlToImage from 'html-to-image'
 import download from 'downloadjs'
-import { Download, Share2, X } from 'lucide-react'
+import { Download, Share2, X, Copy, Check } from 'lucide-react'
 import type { DashboardStats } from '../types/github'
 import { getDevIconUrl } from '../utils/devicons'
 import {
@@ -20,12 +20,13 @@ interface ShareModalProps {
 export function ShareModal({ stats, aiTitle, isOpen, onClose }: ShareModalProps) {
   const cardRef = useRef<HTMLDivElement>(null)
   const [exporting, setExporting] = useState(false)
+  const [copied, setCopied] = useState(false)
   const [avatarDataUrl, setAvatarDataUrl] = useState<string>('')
   
   const { user, totalStars, languages } = stats
 
   useEffect(() => {
-    // Pre-load avatar as base64 to bypass html-to-image CORS glitches
+    // Pre-load avatar as base64 to bypass html-to-image CORS issues
     async function loadAvatar() {
       try {
         const res = await fetch(user.avatar_url)
@@ -33,7 +34,7 @@ export function ShareModal({ stats, aiTitle, isOpen, onClose }: ShareModalProps)
         const reader = new FileReader()
         reader.onloadend = () => setAvatarDataUrl(reader.result as string)
         reader.readAsDataURL(blob)
-      } catch (e) {
+      } catch {
         setAvatarDataUrl(user.avatar_url)
       }
     }
@@ -58,41 +59,89 @@ export function ShareModal({ stats, aiTitle, isOpen, onClose }: ShareModalProps)
   const mostPopularRepo = getMostPopularRepo(stats)
   const topLanguages = languages.slice(0, 3)
 
-  const handleExport = async (action: 'download' | 'share') => {
+  /** Generate a JPEG blob of the card (JPEG is more compatible with social apps) */
+  const generateCardBlob = async (): Promise<Blob> => {
+    if (!cardRef.current) throw new Error('Card ref missing')
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    const dataUrl = await htmlToImage.toJpeg(cardRef.current, {
+      pixelRatio: 2,
+      backgroundColor: '#0d1117',
+      quality: 0.92,
+    })
+    const res = await fetch(dataUrl)
+    return res.blob()
+  }
+
+  const handleDownload = async () => {
     if (!cardRef.current) return
-    
     setExporting(true)
     try {
-      await new Promise((resolve) => setTimeout(resolve, 200))
-      
-      const dataUrl = await htmlToImage.toPng(cardRef.current, {
-        pixelRatio: 3,
-        backgroundColor: '#0d1117',
+      const blob = await generateCardBlob()
+      const dataUrl = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = dataUrl
+      a.download = `${user.login}-github-wrapped.jpg`
+      a.click()
+      URL.revokeObjectURL(dataUrl)
+    } catch (err) {
+      console.error('Download failed', err)
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  const handleShare = async () => {
+    if (!cardRef.current) return
+    setExporting(true)
+    try {
+      const blob = await generateCardBlob()
+      const file = new File([blob], `${user.login}-github-wrapped.jpg`, { 
+        type: 'image/jpeg',
+        lastModified: Date.now(),
       })
       
-      if (action === 'share' && navigator.share) {
-        const res = await fetch(dataUrl)
-        const blob = await res.blob()
-        const file = new File([blob], `${user.login}-github-wrapped.png`, { type: 'image/png' })
-        
-        // Many mobile share extensions (especially Snapchat and Instagram) fail 
-        // when title, text, and files are sent together. Passing just the file 
-        // and URL maximizes compatibility.
-        await navigator.share({
-          files: [file],
-          url: window.location.href
-        })
-      } else {
-        download(dataUrl, `${user.login}-github-wrapped.png`)
+      // Check if sharing files is supported at all
+      if (navigator.canShare && !navigator.canShare({ files: [file] })) {
+        // Fallback: download the image instead
+        download(URL.createObjectURL(blob), `${user.login}-github-wrapped.jpg`)
+        return
       }
-    } catch (err) {
-      console.error('Failed to export card', err)
-      if (action === 'share') {
+
+      // Share with ONLY the file — no text, no title, no url.
+      // Snapchat, Instagram, and other picky apps reject mixed payloads.
+      await navigator.share({ files: [file] })
+    } catch (err: any) {
+      // AbortError means user dismissed the share sheet — not a real error
+      if (err?.name !== 'AbortError') {
+        console.error('Share failed, falling back to download', err)
         try {
-          const dataUrl = await htmlToImage.toPng(cardRef.current!, { pixelRatio: 3, backgroundColor: '#0d1117' })
-          download(dataUrl, `${user.login}-github-wrapped.png`)
-        } catch { /* silent fallback */ }
+          const blob = await generateCardBlob()
+          download(URL.createObjectURL(blob), `${user.login}-github-wrapped.jpg`)
+        } catch { /* silent */ }
       }
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  const handleCopyImage = async () => {
+    if (!cardRef.current) return
+    setExporting(true)
+    try {
+      // Use PNG for clipboard (clipboard API requires PNG)
+      const dataUrl = await htmlToImage.toPng(cardRef.current, {
+        pixelRatio: 2,
+        backgroundColor: '#0d1117',
+      })
+      const res = await fetch(dataUrl)
+      const blob = await res.blob()
+      await navigator.clipboard.write([
+        new ClipboardItem({ 'image/png': blob })
+      ])
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch (err) {
+      console.error('Copy failed', err)
     } finally {
       setExporting(false)
     }
@@ -186,21 +235,35 @@ export function ShareModal({ stats, aiTitle, isOpen, onClose }: ShareModalProps)
         <div className="share-actions">
           <button 
             className="btn-secondary" 
-            onClick={() => handleExport('download')}
+            onClick={handleDownload}
             disabled={exporting}
           >
             <Download size={18} />
-            {exporting ? 'Saving...' : 'Save'}
+            {exporting ? '...' : 'Save'}
           </button>
           <button 
-            className="btn-primary" 
-            onClick={() => handleExport('share')}
+            className="btn-secondary"
+            onClick={handleCopyImage}
             disabled={exporting}
           >
-            <Share2 size={18} />
-            Share
+            {copied ? <Check size={18} /> : <Copy size={18} />}
+            {copied ? 'Copied!' : 'Copy'}
           </button>
+          {typeof navigator.share === 'function' && (
+            <button 
+              className="btn-primary" 
+              onClick={handleShare}
+              disabled={exporting}
+            >
+              <Share2 size={18} />
+              Share
+            </button>
+          )}
         </div>
+
+        <p className="share-tip">
+          Snapchat not working? Use <strong>Copy</strong>, then paste directly into your Snap.
+        </p>
         
         <button className="btn-close" onClick={onClose} disabled={exporting}>
           <X size={24} />
