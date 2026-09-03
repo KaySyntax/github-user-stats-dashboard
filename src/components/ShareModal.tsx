@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
 import * as htmlToImage from 'html-to-image'
-import download from 'downloadjs'
 import { Download, Share2, X, Copy, Check } from 'lucide-react'
 import type { DashboardStats } from '../types/github'
 import { getDevIconUrl } from '../utils/devicons'
@@ -17,28 +16,71 @@ interface ShareModalProps {
   onClose: () => void
 }
 
+/**
+ * Fetches any URL and returns it as a base64 data URL.
+ * This is critical for html-to-image: external images cause CORS canvas tainting.
+ */
+async function toBase64(url: string): Promise<string> {
+  try {
+    const res = await fetch(url)
+    const blob = await res.blob()
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onloadend = () => resolve(reader.result as string)
+      reader.onerror = reject
+      reader.readAsDataURL(blob)
+    })
+  } catch {
+    return url // fallback to original URL
+  }
+}
+
 export function ShareModal({ stats, aiTitle, isOpen, onClose }: ShareModalProps) {
   const cardRef = useRef<HTMLDivElement>(null)
   const [exporting, setExporting] = useState(false)
   const [copied, setCopied] = useState(false)
-  const [avatarDataUrl, setAvatarDataUrl] = useState<string>('')
+  const [avatarB64, setAvatarB64] = useState('')
+  const [iconCache, setIconCache] = useState<Record<string, string>>({})
+  const [imagesReady, setImagesReady] = useState(false)
   
   const { user, totalStars, languages } = stats
+  const topLanguages = languages.slice(0, 3)
 
+  // Pre-convert ALL external images to base64 on mount
   useEffect(() => {
-    // Pre-load avatar as base64 to bypass html-to-image CORS issues
-    async function loadAvatar() {
-      try {
-        const res = await fetch(user.avatar_url)
-        const blob = await res.blob()
-        const reader = new FileReader()
-        reader.onloadend = () => setAvatarDataUrl(reader.result as string)
-        reader.readAsDataURL(blob)
-      } catch {
-        setAvatarDataUrl(user.avatar_url)
+    let cancelled = false
+
+    async function preloadAll() {
+      // 1. Avatar
+      const avatarPromise = toBase64(user.avatar_url)
+      
+      // 2. Devicon logos
+      const iconEntries: [string, string][] = []
+      for (const lang of topLanguages) {
+        const url = getDevIconUrl(lang.name)
+        if (url) iconEntries.push([lang.name, url])
+      }
+      const iconPromises = iconEntries.map(async ([name, url]) => {
+        const b64 = await toBase64(url)
+        return [name, b64] as [string, string]
+      })
+
+      const [avatar, ...icons] = await Promise.all([avatarPromise, ...iconPromises])
+      
+      if (!cancelled) {
+        setAvatarB64(avatar)
+        const cache: Record<string, string> = {}
+        for (const [name, b64] of icons) {
+          cache[name] = b64
+        }
+        setIconCache(cache)
+        setImagesReady(true)
       }
     }
-    loadAvatar()
+
+    preloadAll()
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user.avatar_url])
 
   useEffect(() => {
@@ -57,32 +99,42 @@ export function ShareModal({ stats, aiTitle, isOpen, onClose }: ShareModalProps)
   const longestStreak = calculateLongestStreak(stats.heatmap)
   const codingEra = calculateCodingEra(stats.events)
   const mostPopularRepo = getMostPopularRepo(stats)
-  const topLanguages = languages.slice(0, 3)
 
-  /** Generate a JPEG blob of the card (JPEG is more compatible with social apps) */
-  const generateCardBlob = async (): Promise<Blob> => {
+  /** Generate a PNG blob of the card */
+  const generatePngBlob = async (): Promise<Blob> => {
     if (!cardRef.current) throw new Error('Card ref missing')
-    await new Promise((resolve) => setTimeout(resolve, 200))
-    const dataUrl = await htmlToImage.toJpeg(cardRef.current, {
+    await new Promise((r) => setTimeout(r, 100))
+    const dataUrl = await htmlToImage.toPng(cardRef.current, {
       pixelRatio: 2,
       backgroundColor: '#0d1117',
-      quality: 0.92,
     })
     const res = await fetch(dataUrl)
     return res.blob()
+  }
+
+  /** Copy to clipboard — returns true on success */
+  const copyToClipboard = async (blob: Blob): Promise<boolean> => {
+    try {
+      await navigator.clipboard.write([
+        new ClipboardItem({ 'image/png': blob })
+      ])
+      return true
+    } catch {
+      return false
+    }
   }
 
   const handleDownload = async () => {
     if (!cardRef.current) return
     setExporting(true)
     try {
-      const blob = await generateCardBlob()
-      const dataUrl = URL.createObjectURL(blob)
+      const blob = await generatePngBlob()
+      const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
-      a.href = dataUrl
-      a.download = `${user.login}-github-wrapped.jpg`
+      a.href = url
+      a.download = `${user.login}-github-wrapped.png`
       a.click()
-      URL.revokeObjectURL(dataUrl)
+      URL.revokeObjectURL(url)
     } catch (err) {
       console.error('Download failed', err)
     } finally {
@@ -90,34 +142,43 @@ export function ShareModal({ stats, aiTitle, isOpen, onClose }: ShareModalProps)
     }
   }
 
+  /**
+   * Airbuds-style share:
+   * 1. Generate the image
+   * 2. Copy it to clipboard FIRST  ← this is the trick
+   * 3. Then open the OS share sheet
+   * When Snapchat/Instagram opens, it detects clipboard content
+   * and shows "Pasted from [your site]"
+   */
   const handleShare = async () => {
     if (!cardRef.current) return
     setExporting(true)
     try {
-      const blob = await generateCardBlob()
-      const file = new File([blob], `${user.login}-github-wrapped.jpg`, { 
-        type: 'image/jpeg',
+      const blob = await generatePngBlob()
+      
+      // Step 1: Copy to clipboard FIRST (the Airbuds trick)
+      await copyToClipboard(blob)
+
+      // Step 2: Then open the native share sheet
+      const file = new File([blob], `${user.login}-github-wrapped.png`, { 
+        type: 'image/png',
         lastModified: Date.now(),
       })
       
-      // Check if sharing files is supported at all
       if (navigator.canShare && !navigator.canShare({ files: [file] })) {
-        // Fallback: download the image instead
-        download(URL.createObjectURL(blob), `${user.login}-github-wrapped.jpg`)
+        // Browser doesn't support file sharing, image is already on clipboard
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2500)
         return
       }
 
-      // Share with ONLY the file — no text, no title, no url.
-      // Snapchat, Instagram, and other picky apps reject mixed payloads.
       await navigator.share({ files: [file] })
     } catch (err: any) {
-      // AbortError means user dismissed the share sheet — not a real error
       if (err?.name !== 'AbortError') {
-        console.error('Share failed, falling back to download', err)
-        try {
-          const blob = await generateCardBlob()
-          download(URL.createObjectURL(blob), `${user.login}-github-wrapped.jpg`)
-        } catch { /* silent */ }
+        console.error('Share failed', err)
+        // Image is already on clipboard from step 1, so show copied state
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2500)
       }
     } finally {
       setExporting(false)
@@ -128,18 +189,12 @@ export function ShareModal({ stats, aiTitle, isOpen, onClose }: ShareModalProps)
     if (!cardRef.current) return
     setExporting(true)
     try {
-      // Use PNG for clipboard (clipboard API requires PNG)
-      const dataUrl = await htmlToImage.toPng(cardRef.current, {
-        pixelRatio: 2,
-        backgroundColor: '#0d1117',
-      })
-      const res = await fetch(dataUrl)
-      const blob = await res.blob()
-      await navigator.clipboard.write([
-        new ClipboardItem({ 'image/png': blob })
-      ])
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
+      const blob = await generatePngBlob()
+      const ok = await copyToClipboard(blob)
+      if (ok) {
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+      }
     } catch (err) {
       console.error('Copy failed', err)
     } finally {
@@ -165,7 +220,7 @@ export function ShareModal({ stats, aiTitle, isOpen, onClose }: ShareModalProps)
 
           {/* Header: Large Avatar + Name */}
           <div className="share-card-header">
-            <img src={avatarDataUrl || user.avatar_url} alt="" className="share-card-avatar-large" />
+            <img src={avatarB64 || user.avatar_url} alt="" className="share-card-avatar-large" />
             <div className="share-card-user-info">
               <h2>{user.name || user.login}</h2>
               <p>@{user.login}</p>
@@ -194,17 +249,27 @@ export function ShareModal({ stats, aiTitle, isOpen, onClose }: ShareModalProps)
               </div>
             </div>
 
-            {/* Top Languages */}
+            {/* Top Languages — using pre-loaded base64 icons */}
             <div className="share-card-tile languages-tile">
               <span className="tile-label">Top Languages</span>
               <div className="languages-logo-row" style={{ display: 'flex', gap: '1rem', justifyContent: 'center', marginTop: '0.5rem', flexWrap: 'wrap' }}>
-                {topLanguages.map((lang) => (
-                  getDevIconUrl(lang.name) ? (
-                    <img key={lang.name} src={getDevIconUrl(lang.name)!} alt={lang.name} title={lang.name} width={32} height={32} className="language-icon-large" />
+                {topLanguages.map((lang) => {
+                  const b64Icon = iconCache[lang.name]
+                  const fallbackUrl = getDevIconUrl(lang.name)
+                  return b64Icon || fallbackUrl ? (
+                    <img 
+                      key={lang.name} 
+                      src={b64Icon || fallbackUrl!} 
+                      alt={lang.name} 
+                      title={lang.name} 
+                      width={32} 
+                      height={32} 
+                      className="language-icon-large" 
+                    />
                   ) : (
                     <span key={lang.name} style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{lang.name}</span>
                   )
-                ))}
+                })}
               </div>
             </div>
 
@@ -236,7 +301,7 @@ export function ShareModal({ stats, aiTitle, isOpen, onClose }: ShareModalProps)
           <button 
             className="btn-secondary" 
             onClick={handleDownload}
-            disabled={exporting}
+            disabled={exporting || !imagesReady}
           >
             <Download size={18} />
             {exporting ? '...' : 'Save'}
@@ -244,7 +309,7 @@ export function ShareModal({ stats, aiTitle, isOpen, onClose }: ShareModalProps)
           <button 
             className="btn-secondary"
             onClick={handleCopyImage}
-            disabled={exporting}
+            disabled={exporting || !imagesReady}
           >
             {copied ? <Check size={18} /> : <Copy size={18} />}
             {copied ? 'Copied!' : 'Copy'}
@@ -253,7 +318,7 @@ export function ShareModal({ stats, aiTitle, isOpen, onClose }: ShareModalProps)
             <button 
               className="btn-primary" 
               onClick={handleShare}
-              disabled={exporting}
+              disabled={exporting || !imagesReady}
             >
               <Share2 size={18} />
               Share
@@ -262,7 +327,7 @@ export function ShareModal({ stats, aiTitle, isOpen, onClose }: ShareModalProps)
         </div>
 
         <p className="share-tip">
-          Snapchat not working? Use <strong>Copy</strong>, then paste directly into your Snap.
+          Image is auto-copied to clipboard when sharing. Paste directly in any app!
         </p>
         
         <button className="btn-close" onClick={onClose} disabled={exporting}>
