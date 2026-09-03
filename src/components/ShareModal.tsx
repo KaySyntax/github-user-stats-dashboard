@@ -20,8 +20,25 @@ interface ShareModalProps {
 export function ShareModal({ stats, aiTitle, isOpen, onClose }: ShareModalProps) {
   const cardRef = useRef<HTMLDivElement>(null)
   const [exporting, setExporting] = useState(false)
+  const [avatarDataUrl, setAvatarDataUrl] = useState<string>('')
   
   const { user, totalStars, languages } = stats
+
+  useEffect(() => {
+    // Pre-load avatar as base64 to bypass html-to-image CORS glitches
+    async function loadAvatar() {
+      try {
+        const res = await fetch(user.avatar_url)
+        const blob = await res.blob()
+        const reader = new FileReader()
+        reader.onloadend = () => setAvatarDataUrl(reader.result as string)
+        reader.readAsDataURL(blob)
+      } catch (e) {
+        setAvatarDataUrl(user.avatar_url)
+      }
+    }
+    loadAvatar()
+  }, [user.avatar_url])
 
   useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => {
@@ -58,10 +75,12 @@ export function ShareModal({ stats, aiTitle, isOpen, onClose }: ShareModalProps)
         const blob = await res.blob()
         const file = new File([blob], `${user.login}-github-wrapped.png`, { type: 'image/png' })
         
+        // Many mobile share extensions (especially Snapchat and Instagram) fail 
+        // when title, text, and files are sent together. Passing just the file 
+        // and URL maximizes compatibility.
         await navigator.share({
-          title: `${user.login}'s GitHub Wrapped`,
-          text: `Check out my GitHub stats!`,
-          files: [file]
+          files: [file],
+          url: window.location.href
         })
       } else {
         download(dataUrl, `${user.login}-github-wrapped.png`)
@@ -97,7 +116,7 @@ export function ShareModal({ stats, aiTitle, isOpen, onClose }: ShareModalProps)
 
           {/* Header: Large Avatar + Name */}
           <div className="share-card-header">
-            <img src={user.avatar_url} alt="" className="share-card-avatar-large" crossOrigin="anonymous" />
+            <img src={avatarDataUrl || user.avatar_url} alt="" className="share-card-avatar-large" />
             <div className="share-card-user-info">
               <h2>{user.name || user.login}</h2>
               <p>@{user.login}</p>
