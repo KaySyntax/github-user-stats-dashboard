@@ -15,29 +15,6 @@ interface EventTypesChartProps {
   data: EventTypeSlice[]
 }
 
-const CustomXAxisTick = (props: any) => {
-  const { x, y, payload } = props
-  const value = payload.value
-
-  return (
-    <g transform={`translate(${x},${y})`}>
-      <text
-        x={0}
-        y={0}
-        dy={14}
-        textAnchor="end"
-        fill="#8b949e"
-        fontSize={11}
-        transform="rotate(-35)"
-        style={{ cursor: 'pointer' }}
-      >
-        <title>{value}</title>
-        {value}
-      </text>
-    </g>
-  )
-}
-
 export function EventTypesChart({ data }: EventTypesChartProps) {
   if (data.length === 0) {
     return <p className="empty-chart">No event data available</p>
@@ -45,7 +22,6 @@ export function EventTypesChart({ data }: EventTypesChartProps) {
 
   return (
     <ResponsiveContainer width="100%" height={320}>
-      <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="#21262d" />
         <XAxis
           dataKey="type"
@@ -55,8 +31,6 @@ export function EventTypesChart({ data }: EventTypesChartProps) {
         />
         <YAxis stroke="#8b949e" tick={{ fill: '#8b949e', fontSize: 12 }} allowDecimals={false} />
         <Tooltip
-          contentStyle={{
-            background: '#161b22',
             border: '1px solid #30363d',
             borderRadius: 8,
             color: '#e6edf3',
